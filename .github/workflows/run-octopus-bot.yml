@@ -1,0 +1,26 @@
+name: Run Octopus Minmax Bot Daily
+
+on:
+  schedule:
+    # This runs the bot every day at 11:00 PM UTC.
+    - cron: '0 23 * * *'
+  
+  # This line allows you to run the bot manually for testing[3].
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the Octopus Minmax Bot container
+        uses: addnab/docker-run-action@v3
+        with:
+          image: eelmafia/octopus-minmax-bot:latest
+          options: >-
+            -e ACC_NUMBER=${{ secrets.ACC_NUMBER }}
+            -e API_KEY=${{ secrets.API_KEY }}
+            -e TARIFFS=go,agile,flexible
+            -e ONE_OFF=true
+            -e DRY_RUN=false
+            -e TZ=Europe/London
+            -e NOTIFICATION_URLS=${{ secrets.NOTIFICATION_URLS }}
