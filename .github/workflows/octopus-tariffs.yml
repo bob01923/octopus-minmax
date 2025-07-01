@@ -1,4 +1,4 @@
-name: Daily Energy Rates - Eastern England
+name: Daily Energy Rates - Eastern England (Correct Rates)
 
 on:
   schedule:
@@ -9,7 +9,7 @@ jobs:
   daily-rates:
     runs-on: ubuntu-latest
     steps:
-      - name: Get all tariff rates for today
+      - name: Get actual tariff rates from API
         env:
           DISCORD_WEBHOOK: ${{ secrets.NOTIFICATION_URLS }}
           OCTOPUS_API_KEY: ${{ secrets.API_KEY }}
@@ -18,17 +18,25 @@ jobs:
           TOMORROW=$(date -u -d '+1 day' +%Y-%m-%dT00:00:00Z)
           TODAY_FORMATTED=$(date '+%A, %d %B %Y')
           
-          echo "Fetching rates for ${TODAY_FORMATTED}..."
+          echo "Fetching actual rates for ${TODAY_FORMATTED}..."
           
-          # Get Agile rates (48 half-hourly periods)
+          # Get Agile rates
           AGILE_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
             "https://api.octopus.energy/v1/products/AGILE-24-10-01/electricity-tariffs/E-1R-AGILE-24-10-01-A/standard-unit-rates/?period_from=${TODAY}&period_to=${TOMORROW}&page_size=48")
           
-          # Get Tracker rate
+          # Get Tracker rates
           TRACKER_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
             "https://api.octopus.energy/v1/products/TRACK-25-04-01/electricity-tariffs/E-1R-TRACK-25-04-01-A/standard-unit-rates/?page_size=1")
           
-          # Build message with Python
+          # Get Go rates (actual API data)
+          GO_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
+            "https://api.octopus.energy/v1/products/GO-22-10-14/electricity-tariffs/E-1R-GO-22-10-14-A/standard-unit-rates/?page_size=48")
+          
+          # Get Cosy rates (actual API data)
+          COSY_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
+            "https://api.octopus.energy/v1/products/COSY-22-12-08/electricity-tariffs/E-1R-COSY-22-12-08-A/standard-unit-rates/?page_size=48")
+          
+          # Process all data
           python3 << 'EOF'
           import json
           import os
@@ -36,40 +44,60 @@ jobs:
           from datetime import datetime
           
           webhook_url = os.environ['DISCORD_WEBHOOK']
-          agile_raw = os.environ.get('AGILE_DATA', '{}')
-          tracker_raw = os.environ.get('TRACKER_DATA', '{}')
+          today = datetime.now().strftime('%A, %d %B %Y')
           
           try:
-              agile_data = json.loads(agile_raw)
-              tracker_data = json.loads(tracker_raw)
+              # Parse all API responses
+              agile_data = json.loads(os.environ.get('AGILE_DATA', '{}'))
+              tracker_data = json.loads(os.environ.get('TRACKER_DATA', '{}'))
+              go_data = json.loads(os.environ.get('GO_DATA', '{}'))
+              cosy_data = json.loads(os.environ.get('COSY_DATA', '{}'))
               
-              today = datetime.now().strftime('%A, %d %B %Y')
-              
-              # Build message
               message = f"🔋 **Daily Energy Rates - Eastern England**\n📅 {today}\n\n"
               
               # Agile rates
-              message += "⚡ **Agile Octopus** (Half-hourly rates):\n"
-              for rate in agile_data.get('results', []):
-                  time = rate['valid_from'][11:16]
-                  price = rate['value_inc_vat']
-                  message += f"  • {time}: {price:.2f}p/kWh\n"
+              message += "⚡ **Agile Octopus**:\n"
+              agile_rates = agile_data.get('results', [])
+              if agile_rates:
+                  sorted_rates = sorted(agile_rates, key=lambda x: x['valid_from'])
+                  for rate in sorted_rates:
+                      time = rate['valid_from'][11:16]
+                      price = rate['value_inc_vat']
+                      message += f"  • {time}: {price:.2f}p/kWh\n"
+              else:
+                  message += "  • No data available\n"
               
               # Tracker rate
-              tracker_rate = tracker_data.get('results', [{}])[0].get('value_inc_vat', 'N/A')
-              message += f"\n📊 **Tracker v2**: {tracker_rate}p/kWh\n"
+              message += f"\n📊 **Tracker v2**: "
+              tracker_rates = tracker_data.get('results', [])
+              if tracker_rates:
+                  message += f"{tracker_rates[0]['value_inc_vat']:.2f}p/kWh\n"
+              else:
+                  message += "No data available\n"
               
-              # Go rates (fixed schedule)
+              # Go rates (from API)
               message += "\n🚗 **Octopus Go**:\n"
-              message += "  • 00:30-04:30: 7.5p/kWh\n"
-              message += "  • All other times: ~20p/kWh\n"
+              go_rates = go_data.get('results', [])
+              if go_rates:
+                  for rate in sorted(go_rates, key=lambda x: x['valid_from']):
+                      time_from = rate['valid_from'][11:16]
+                      time_to = rate['valid_to'][11:16]
+                      price = rate['value_inc_vat']
+                      message += f"  • {time_from}-{time_to}: {price:.2f}p/kWh\n"
+              else:
+                  message += "  • No data available\n"
               
-              # Cosy rates (fixed schedule)
+              # Cosy rates (from API)
               message += "\n🏠 **Cosy Octopus**:\n"
-              message += "  • 04:00-07:00: 12.25p/kWh\n"
-              message += "  • 13:00-16:00: 12.25p/kWh\n"
-              message += "  • 22:00-00:00: 12.25p/kWh\n"
-              message += "  • All other times: 36.25p/kWh\n"
+              cosy_rates = cosy_data.get('results', [])
+              if cosy_rates:
+                  for rate in sorted(cosy_rates, key=lambda x: x['valid_from']):
+                      time_from = rate['valid_from'][11:16]
+                      time_to = rate['valid_to'][11:16]
+                      price = rate['value_inc_vat']
+                      message += f"  • {time_from}-{time_to}: {price:.2f}p/kWh\n"
+              else:
+                  message += "  • No data available\n"
               
               message += f"\n🏴󠁧󠁢󠁥󠁮󠁧󠁿 Eastern England (Region A)"
               
@@ -78,19 +106,27 @@ jobs:
               response = requests.post(webhook_url, json=payload)
               
               if response.status_code == 204:
-                  print("✅ Daily rates sent to Discord")
+                  print("✅ Actual rates sent successfully")
               else:
-                  print(f"❌ Discord failed: {response.status_code}")
+                  print(f"❌ Failed: {response.status_code}")
                   
           except Exception as e:
               print(f"Error: {e}")
           EOF
           
-          # Export for Python
+          # Export all data
           echo "AGILE_DATA<<EOF" >> $GITHUB_ENV
           echo "$AGILE_DATA" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
           
           echo "TRACKER_DATA<<EOF" >> $GITHUB_ENV
           echo "$TRACKER_DATA" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          echo "GO_DATA<<EOF" >> $GITHUB_ENV
+          echo "$GO_DATA" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          echo "COSY_DATA<<EOF" >> $GITHUB_ENV
+          echo "$COSY_DATA" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
