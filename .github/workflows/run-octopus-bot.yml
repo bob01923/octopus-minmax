@@ -1,27 +1,33 @@
-name: Octopus MinMax Tariff Bot
+name: Octopus MinMax Bot (Manual & Scheduled)
 
 on:
-  # Schedule the live run to trigger every day at 11 PM London time.
-  # Note: GitHub Actions cron schedules run on UTC. 23:00 UTC is 11 PM GMT (winter) 
-  # or midnight BST (summer). The TZ="Europe/London" inside the container handles the
-  # time correctly, but the trigger is based on UTC.
   schedule:
-    - cron: '0 23 * * *'
+    - cron: '0 22 * * *' # 10 PM Dry Run
+    - cron: '0 23 * * *' # 11 PM Live Run
 
-  # Allows you to manually run the workflow from the Actions tab for dry runs.
+  # This section enables and configures the manual trigger
   workflow_dispatch:
+    inputs:
+      run_type:
+        description: 'Which job to run manually?'
+        required: true
+        type: choice
+        options:
+        - dry-run # The 10 PM notification logic
+        - live-run # The 11 PM switch logic
+        default: 'dry-run'
 
 jobs:
-  # JOB 1: A safe dry run to test the bot's calculations.
-  # This job will ONLY run when you trigger it manually.
+  # This job handles BOTH the 10 PM scheduled run AND any manual dry runs
   dry-run:
-    name: Dry Run Tariff Check (Manual)
+    name: Dry Run Tariff Check
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    # The 'if' condition now checks for either of the two triggers
+    if: (github.event_name == 'schedule' && github.event.schedule == '0 22 * * *') || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'dry-run')
     steps:
-      - name: Run Octopus MinMax Bot in Dry Run Mode
+      - name: Run bot in notification-only dry run mode
         run: |
-          echo "🚀 Starting Octopus MinMax Bot in DRY RUN mode..."
+          echo "🚀 Running Dry Run (Notification Mode)..."
           docker run \
             --name MinMaxBot-DryRun \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
@@ -34,16 +40,15 @@ jobs:
             -e DRY_RUN=true \
             eelmafia/octopus-minmax-bot
 
-  # JOB 2: The live run that performs the actual switch.
-  # This job will ONLY run at the scheduled time (11 PM).
-  live-run:
-    name: Live Tariff Switch (Scheduled at 11 PM)
+  # This job handles the 11 PM scheduled run AND any manual live runs
+  live-switch:
+    name: Live Tariff Switch
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
+    if: (github.event_name == 'schedule' && github.event.schedule == '0 23 * * *') || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'live-run')
     steps:
-      - name: Run Octopus MinMax Bot in Live Mode
+      - name: Run bot in live switch mode
         run: |
-          echo "🔴 Starting Octopus MinMax Bot in LIVE mode..."
+          echo "🔴 Running Live Switch Mode..."
           docker run \
             --name MinMaxBot-Live \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
