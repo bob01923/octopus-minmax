@@ -1,56 +1,76 @@
-name: Octopus MinMax Bot (IFTTT Triggered)
+name: Octopus Bot (Reliable Timing + Test Option)
 
 on:
-  # Remove the unreliable cron schedule
-  # schedule:
-  #   - cron: '5 22,23 * * *'
+  schedule:
+    # Run at 11:05 PM instead of 11:00 PM (avoids peak load)
+    - cron: '5 23 * * *'  # 23:05 UTC = 11:05 PM GMT / 12:05 AM BST
   
-  # Replace with IFTTT webhook trigger
-  repository_dispatch:
-    types: [octopus-bot-trigger]
-  
-  # Keep manual trigger for testing
+  # Manual trigger with choice between live and dry run
   workflow_dispatch:
+    inputs:
+      run_type:
+        description: 'Which type of run?'
+        required: true
+        type: choice
+        options:
+        - dry-run
+        - live-run
+        default: 'dry-run'
 
 jobs:
-  # Live run (triggered by IFTTT at 11 PM BST)
-  ifttt-live-run:
-    name: IFTTT Triggered Live Run
+  # Scheduled live run at 11:05 PM BST
+  scheduled-live-run:
+    name: Scheduled Live Run (11:05 PM BST)
     runs-on: ubuntu-latest
-    if: github.event_name == 'repository_dispatch'
+    if: github.event_name == 'schedule'
     steps:
       - name: Run live tariff switching bot
         run: |
-          echo "🔴 IFTTT triggered live run at 11 PM BST..."
-          docker run \
-            --name MinMaxBot-Live \
+          echo "🔴 Running scheduled live bot at 11:05 PM BST..."
+          docker run --rm \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
             -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
             -e TARIFFS="agile,cosy,go" \
-            -e TZ="Europe/London" \
-            -e BATCH_NOTIFICATIONS=false \
             -e ONE_OFF=true \
             -e DRY_RUN=false \
+            -e TZ="Europe/London" \
             eelmafia/octopus-minmax-bot
 
-  # Manual dry run (unchanged)
+  # Manual dry run (test mode)
   manual-dry-run:
-    name: Manual Dry Run Check
+    name: Manual Dry Run (Test Mode)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'dry-run'
     steps:
-      - name: Run dry run for cost comparison
+      - name: Run bot in test mode
         run: |
-          echo "🚀 Running manual dry run..."
-          docker run \
-            --name MinMaxBot-DryRun \
+          echo "🚀 Running manual dry run for cost comparison..."
+          docker run --rm \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
             -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
             -e TARIFFS="agile,cosy,go" \
-            -e TZ="Europe/London" \
-            -e BATCH_NOTIFICATIONS=false \
             -e ONE_OFF=true \
             -e DRY_RUN=true \
+            -e TZ="Europe/London" \
+            eelmafia/octopus-minmax-bot
+
+  # Manual live run (emergency switch option)
+  manual-live-run:
+    name: Manual Live Run (Emergency Switch)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'live-run'
+    steps:
+      - name: Run live tariff switching bot
+        run: |
+          echo "⚠️ Running manual live bot (emergency switch)..."
+          docker run --rm \
+            -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
+            -e API_KEY="${{ secrets.API_KEY }}" \
+            -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
+            -e TARIFFS="agile,cosy,go" \
+            -e ONE_OFF=true \
+            -e DRY_RUN=false \
+            -e TZ="Europe/London" \
             eelmafia/octopus-minmax-bot
