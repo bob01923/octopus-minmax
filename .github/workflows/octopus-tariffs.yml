@@ -1,32 +1,30 @@
-name: Octopus Bot (Reliable Timing + Test Option)
+name: Octopus Bot (Auto + Test + Live Override)
 
 on:
   schedule:
-    # Run at 11:05 PM instead of 11:00 PM (avoids peak load)
-    - cron: '5 23 * * *'  # 23:05 UTC = 11:05 PM GMT / 12:05 AM BST
+    - cron: '5 23 * * *'  # 11:05 PM BST automatic run
   
-  # Manual trigger with choice between live and dry run
   workflow_dispatch:
     inputs:
       run_type:
-        description: 'Which type of run?'
+        description: 'Choose run type:'
         required: true
         type: choice
         options:
-        - dry-run
-        - live-run
-        default: 'dry-run'
+        - test-run
+        - live-override
+        default: 'test-run'
 
 jobs:
-  # Scheduled live run at 11:05 PM BST
-  scheduled-live-run:
-    name: Scheduled Live Run (11:05 PM BST)
+  # Automatic live run at 11:05 PM BST
+  automatic-switching:
+    name: Automatic Tariff Switching (11:05 PM BST)
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     steps:
-      - name: Run live tariff switching bot
+      - name: Run automatic tariff switching
         run: |
-          echo "🔴 Running scheduled live bot at 11:05 PM BST..."
+          echo "🔴 Automatic tariff switching at 11:05 PM BST..."
           docker run --rm \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
@@ -37,15 +35,15 @@ jobs:
             -e TZ="Europe/London" \
             eelmafia/octopus-minmax-bot
 
-  # Manual dry run (test mode)
-  manual-dry-run:
-    name: Manual Dry Run (Test Mode)
+  # Manual test run (comparison only)
+  test-run:
+    name: Test Run (Cost Comparison Only)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'dry-run'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'test-run'
     steps:
-      - name: Run bot in test mode
+      - name: Run cost comparison test
         run: |
-          echo "🚀 Running manual dry run for cost comparison..."
+          echo "🚀 Running test - cost comparison only (no switching)..."
           docker run --rm \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
@@ -56,15 +54,15 @@ jobs:
             -e TZ="Europe/London" \
             eelmafia/octopus-minmax-bot
 
-  # Manual live run (emergency switch option)
-  manual-live-run:
-    name: Manual Live Run (Emergency Switch)
+  # Manual live override (immediate switching)
+  live-override:
+    name: Live Override (Immediate Tariff Switch)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'live-run'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'live-override'
     steps:
-      - name: Run live tariff switching bot
+      - name: Run immediate tariff switching
         run: |
-          echo "⚠️ Running manual live bot (emergency switch)..."
+          echo "⚡ LIVE OVERRIDE: Immediate tariff switching..."
           docker run --rm \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
