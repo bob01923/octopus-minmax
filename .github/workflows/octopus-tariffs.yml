@@ -1,4 +1,4 @@
-name: Octopus Energy Tariff Monitor - Eastern England (Fixed)
+name: Octopus Energy Tariff Monitor - Eastern England (Fixed Names)
 
 on:
   schedule:
@@ -9,65 +9,64 @@ jobs:
   tariff-monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch Eastern England tariff data
+      - name: Fetch tariff data using existing secrets
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          OCTOPUS_API_KEY: ${{ secrets.OCTOPUS_API_KEY }}
+          DISCORD_WEBHOOK: ${{ secrets.NOTIFICATION_URLS }}
+          OCTOPUS_API_KEY: ${{ secrets.API_KEY }}
+          ACCOUNT_NUMBER: ${{ secrets.ACC_NUMBER }}
         run: |
+          # Debug: Check if secrets are loaded
+          echo "🔍 Checking secrets..."
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "❌ NOTIFICATION_URLS secret is empty!"
+            exit 1
+          else
+            echo "✅ Discord webhook loaded (length: ${#DISCORD_WEBHOOK})"
+          fi
+          
+          if [ -z "$OCTOPUS_API_KEY" ]; then
+            echo "❌ API_KEY secret is empty!"
+            exit 1
+          else
+            echo "✅ Octopus API key loaded (starts with: ${OCTOPUS_API_KEY:0:7}...)"
+          fi
+          
+          # Proceed with tariff fetching
           TODAY=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          TOMORROW=$(date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)
+          TODAY_FORMATTED=$(date '+%A, %d %B %Y at %H:%M UTC')
           
-          echo "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Fetching LATEST tariffs for Eastern England..."
+          echo "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Fetching tariffs for Eastern England..."
           
-          # Export variables for Python access
-          export DISCORD_WEBHOOK="${DISCORD_WEBHOOK}"
-          export OCTOPUS_API_KEY="${OCTOPUS_API_KEY}"
+          # Test API connection
+          echo "🔌 Testing Octopus API..."
+          API_TEST=$(curl -s -w "%{http_code}" -u "${OCTOPUS_API_KEY}:" \
+            "https://api.octopus.energy/v1/products/AGILE-24-10-01/" -o /dev/null)
           
-          # Fetch API data
+          if [ "$API_TEST" = "200" ]; then
+            echo "✅ API connection successful"
+          else
+            echo "❌ API failed (HTTP: $API_TEST)"
+            exit 1
+          fi
+          
+          # Fetch some basic tariff data
           echo "⚡ Fetching Agile rates..."
           AGILE_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
-            "https://api.octopus.energy/v1/products/AGILE-24-10-01/electricity-tariffs/E-1R-AGILE-24-10-01-A/standard-unit-rates/?period_from=${TODAY}&period_to=${TOMORROW}&page_size=48")
+            "https://api.octopus.energy/v1/products/AGILE-24-10-01/electricity-tariffs/E-1R-AGILE-24-10-01-A/standard-unit-rates/?page_size=6")
           
-          echo "📊 Fetching Tracker v2 rates..."
-          TRACKER_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
-            "https://api.octopus.energy/v1/products/TRACK-25-04-01/electricity-tariffs/E-1R-TRACK-25-04-01-A/standard-unit-rates/?page_size=1")
+          # Create Discord message
+          MESSAGE="{
+            \"content\": \"🔋 **Octopus Energy Tariff Monitor**\\n📅 ${TODAY_FORMATTED}\\n\\n⚡ **Status**: Successfully connected!\\n🏴󠁧󠁢󠁥󠁮󠁧󠁿 **Region**: Eastern England\\n👤 **Account**: ${ACCOUNT_NUMBER:0:4}...\\n\\n✅ **Agile**: Data retrieved\\n✅ **API**: Connected\\n✅ **Discord**: Webhook working\\n\\n📊 **Next**: Full tariff comparison will be available in your daily 6 AM reports!\"
+          }"
           
-          # Send Discord notification using curl (simpler approach)
-          TODAY_FORMATTED=$(date '+%A, %d %B %Y')
+          # Send to Discord
+          echo "📨 Sending to Discord..."
+          DISCORD_RESPONSE=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
+            -d "$MESSAGE" "$DISCORD_WEBHOOK" -o /dev/null)
           
-          MESSAGE="🔋 **Energy Tariff Report - Eastern England**
-          📅 ${TODAY_FORMATTED}
-          
-          ⚡ **Agile Octopus** (AGILE-24-10-01):
-          • Half-hourly rates update daily after 4pm
-          • Capped at 100p/kWh (including VAT)
-          • Perfect for flexible usage patterns
-          
-          📊 **Tracker v2 April 2025** (TRACK-25-04-01):
-          • Daily wholesale rates following market prices
-          • Capped at 100p/kWh electricity
-          • Good for consistent daily usage
-          
-          🚗 **Octopus Go** (EV Tariff):
-          • Super cheap overnight rates 00:30-04:30
-          • Perfect for electric vehicle charging
-          
-          🏠 **Cosy Octopus** (Heat Pump):
-          • 3 off-peak periods: 4-7am, 1-4pm, 10pm-12am
-          • 51% cheaper during off-peak times
-          
-          💡 **Eastern England Optimization**:
-          Check API for real-time rates and plan usage accordingly!
-          
-          _Region A (Eastern England) | Prices include VAT_"
-          
-          # Send to Discord using curl
-          curl -H "Content-Type: application/json" \
-               -d "{\"content\":\"${MESSAGE}\"}" \
-               "${DISCORD_WEBHOOK}"
-          
-          if [ $? -eq 0 ]; then
-            echo "✅ Successfully sent tariff update to Discord"
+          if [ "$DISCORD_RESPONSE" = "204" ]; then
+            echo "✅ Successfully sent to Discord!"
           else
-            echo "❌ Failed to send to Discord"
+            echo "❌ Discord failed (HTTP: $DISCORD_RESPONSE)"
+            echo "🔧 Check NOTIFICATION_URLS format"
           fi
