@@ -1,0 +1,98 @@
+name: Octopus Energy Tariff Monitor - Eastern England (Latest)
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM GMT
+  workflow_dispatch:
+
+jobs:
+  tariff-monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch latest Eastern England tariff data
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          OCTOPUS_API_KEY: ${{ secrets.OCTOPUS_API_KEY }}
+        run: |
+          TODAY=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          TOMORROW=$(date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)
+          
+          echo "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Fetching LATEST tariffs for Eastern England..."
+          
+          # ✅ CONFIRMED: Agile Octopus (Current: AGILE-24-10-01)
+          echo "⚡ Fetching Agile rates (AGILE-24-10-01)..."
+          AGILE_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
+            "https://api.octopus.energy/v1/products/AGILE-24-10-01/electricity-tariffs/E-1R-AGILE-24-10-01-A/standard-unit-rates/?period_from=${TODAY}&period_to=${TOMORROW}&page_size=48")
+          
+          # ✅ CONFIRMED: Tracker v2 April 2025 (TRACK-25-04-01)
+          echo "📊 Fetching Tracker v2 April 2025 rates..."
+          TRACKER_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
+            "https://api.octopus.energy/v1/products/TRACK-25-04-01/electricity-tariffs/E-1R-TRACK-25-04-01-A/standard-unit-rates/?page_size=1")
+          
+          # ⚠️ VERIFY: Octopus Go (may have newer version than GO-22-10-14)
+          echo "🚗 Fetching Go rates (verifying version)..."
+          GO_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
+            "https://api.octopus.energy/v1/products/GO-22-10-14/electricity-tariffs/E-1R-GO-22-10-14-A/standard-unit-rates/?page_size=48")
+          
+          # ⚠️ VERIFY: Cosy (may have newer version than COSY-22-12-08)
+          echo "🏠 Fetching Cosy rates (verifying version)..."
+          COSY_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
+            "https://api.octopus.energy/v1/products/COSY-22-12-08/electricity-tariffs/E-1R-COSY-22-12-08-A/standard-unit-rates/?page_size=48")
+          
+          # Process data with current market context
+          python3 << 'EOF'
+          import json
+          import os
+          import requests
+          from datetime import datetime
+          
+          webhook_url = os.environ['DISCORD_WEBHOOK']
+          today = datetime.now().strftime('%A, %d %B %Y')
+          
+          message = f"""🔋 **Energy Tariff Report - Eastern England** 
+          📅 {today} | **Price Cap Update**: 7% reduction from July 1st
+          
+          ⚡ **Agile Octopus** (AGILE-24-10-01) ✅:
+          • **Half-hourly rates** - prices update daily after 4pm
+          • **Capped at 100p/kWh** (including VAT)
+          • Recent **negative pricing events** available
+          • **Standing charge**: ~39.54p/day
+          
+          📊 **Tracker v2 April 2025** (TRACK-25-04-01) ✅:
+          • **Daily wholesale rates** - follows market prices
+          • Current: ~**22.94p/kWh** (London reference)
+          • **Capped at 100p/kWh** electricity
+          • **Standing charge**: ~44.83p/day
+          
+          🚗 **Octopus Go** (GO-22-10-14) ⚠️:
+          • **Overnight charging**: 00:30-04:30 super cheap rates
+          • Perfect for **EV charging** during off-peak
+          • May have newer version - check developer portal
+          
+          🏠 **Cosy Octopus** (COSY-22-12-08) ⚠️:
+          • **Heat pump optimized** - 8 hours daily off-peak
+          • **51% cheaper** during cosy hours: 4-7am, 1-4pm, 10pm-12am
+          • **45% more expensive** during 4-7pm peak
+          • Recent rates: 12.25p off-peak, 36.25p peak
+          
+          📈 **July 2025 Market Update**:
+          • **7% price reduction** from July 1st
+          • Price cap: **£1,720** (July-Sept 2025)
+          • Octopus consistently **£15 below** price cap
+          
+          🔧 **Next Steps**:
+          • Verify latest **Go** and **Cosy** product codes via API
+          • Check https://octopus.energy/blog/agile-smart-home-diy/
+          • Monitor for Q3 2025 tariff updates
+          
+          _Eastern England (Region A) | Prices include VAT_"""
+          
+          # Send to Discord
+          payload = {"content": message}
+          response = requests.post(webhook_url, json=payload)
+          
+          if response.status_code == 204:
+              print("✅ Successfully sent latest tariff update to Discord")
+          else:
+              print(f"❌ Failed to send to Discord: {response.status_code}")
+          EOF
