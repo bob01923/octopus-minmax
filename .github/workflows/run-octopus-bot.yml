@@ -1,29 +1,66 @@
-name: Octopus MinMax Bot (Manual & Scheduled)
+name: Octopus MinMax Bot (Eastern Time Schedule)
 
 on:
   schedule:
-    - cron: '0 22 * * *' # 10 PM Dry Run
-    - cron: '0 23 * * *' # 11 PM Live Run
+    # Schedule for 10 PM Eastern Time (ET)
+    # This corresponds to 02:00 UTC during EDT and 03:00 UTC during EST.
+    - cron: '0 2,3 * * *'
+    
+    # Schedule for 11 PM Eastern Time (ET)
+    # This corresponds to 03:00 UTC during EDT and 04:00 UTC during EST.
+    - cron: '0 3,4 * * *'
 
-  # This section enables and configures the manual trigger
   workflow_dispatch:
     inputs:
       run_type:
         description: 'Which job to run manually?'
-        required: true
         type: choice
         options:
-        - dry-run # The 10 PM notification logic
-        - live-run # The 11 PM switch logic
+        - dry-run
+        - live-run
         default: 'dry-run'
 
 jobs:
-  # This job handles BOTH the 10 PM scheduled run AND any manual dry runs
-  dry-run:
-    name: Dry Run Tariff Check
+  # This job checks if it is actually 10 PM or 11 PM in the target timezone
+  time-check:
     runs-on: ubuntu-latest
-    # The 'if' condition now checks for either of the two triggers
-    if: (github.event_name == 'schedule' && github.event.schedule == '0 22 * * *') || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'dry-run')
+    outputs:
+      should_run_10pm: ${{ steps.check.outputs.run_10pm }}
+      should_run_11pm: ${{ steps.check.outputs.run_11pm }}
+    steps:
+      - name: Check current Eastern Time
+        id: check
+        run: |
+          # Use America/New_York as the canonical name for US Eastern Time
+          current_hour=$(TZ='America/New_York' date +'%H')
+          
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # If manually triggered, always allow the run
+            echo "Manual trigger detected, allowing run."
+            echo "run_10pm=true" >> $GITHUB_OUTPUT
+            echo "run_11pm=true" >> $GITHUB_OUTPUT
+          elif [[ "$current_hour" == "22" ]]; then
+            # It's 10 PM ET
+            echo "It is 10 PM ET. Triggering the dry run."
+            echo "run_10pm=true" >> $GITHUB_OUTPUT
+            echo "run_11pm=false" >> $GITHUB_OUTPUT
+          elif [[ "$current_hour" == "23" ]]; then
+            # It's 11 PM ET
+            echo "It is 11 PM ET. Triggering the live run."
+            echo "run_10pm=false" >> $GITHUB_OUTPUT
+            echo "run_11pm=true" >> $GITHUB_OUTPUT
+          else
+            echo "It is neither 10 PM nor 11 PM ET. Skipping."
+            echo "run_10pm=false" >> $GITHUB_OUTPUT
+            echo "run_11pm=false" >> $GITHUB_OUTPUT
+          fi
+
+  # The 10 PM Dry Run
+  dry-run:
+    name: Dry Run Tariff Check (10 PM ET)
+    runs-on: ubuntu-latest
+    needs: time-check
+    if: needs.time-check.outputs.should_run_10pm == 'true' && (github.event_name == 'schedule' || github.event.inputs.run_type == 'dry-run')
     steps:
       - name: Run bot in notification-only dry run mode
         run: |
@@ -33,18 +70,19 @@ jobs:
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
             -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
-            -e TARIFFS="agile,cosy,go,tracker" \
-            -e TZ="Europe/London" \
+            -e TARIFFS="agile,cosy,go" \
+            -e TZ="America/New_York" \
             -e BATCH_NOTIFICATIONS=false \
             -e ONE_OFF=true \
             -e DRY_RUN=true \
             eelmafia/octopus-minmax-bot
 
-  # This job handles the 11 PM scheduled run AND any manual live runs
+  # The 11 PM Live Run
   live-switch:
-    name: Live Tariff Switch
+    name: Live Tariff Switch (11 PM ET)
     runs-on: ubuntu-latest
-    if: (github.event_name == 'schedule' && github.event.schedule == '0 23 * * *') || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'live-run')
+    needs: time-check
+    if: needs.time-check.outputs.should_run_11pm == 'true' && (github.event_name == 'schedule' || github.event.inputs.run_type == 'live-run')
     steps:
       - name: Run bot in live switch mode
         run: |
@@ -54,8 +92,8 @@ jobs:
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
             -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
-            -e TARIFFS="agile,cosy,go,tracker" \
-            -e TZ="Europe/London" \
+            -e TARIFFS="agile,cosy,go" \
+            -e TZ="America/New_York" \
             -e BATCH_NOTIFICATIONS=false \
             -e ONE_OFF=true \
             -e DRY_RUN=false \
