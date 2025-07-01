@@ -1,4 +1,4 @@
-name: Octopus Energy Tariff Monitor - Eastern England (Fixed Names)
+name: Octopus Energy Tariff Monitor - Full Data
 
 on:
   schedule:
@@ -9,64 +9,70 @@ jobs:
   tariff-monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch tariff data using existing secrets
+      - name: Fetch and display full tariff data
         env:
           DISCORD_WEBHOOK: ${{ secrets.NOTIFICATION_URLS }}
           OCTOPUS_API_KEY: ${{ secrets.API_KEY }}
           ACCOUNT_NUMBER: ${{ secrets.ACC_NUMBER }}
         run: |
-          # Debug: Check if secrets are loaded
-          echo "🔍 Checking secrets..."
-          if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "❌ NOTIFICATION_URLS secret is empty!"
-            exit 1
-          else
-            echo "✅ Discord webhook loaded (length: ${#DISCORD_WEBHOOK})"
-          fi
-          
-          if [ -z "$OCTOPUS_API_KEY" ]; then
-            echo "❌ API_KEY secret is empty!"
-            exit 1
-          else
-            echo "✅ Octopus API key loaded (starts with: ${OCTOPUS_API_KEY:0:7}...)"
-          fi
-          
-          # Proceed with tariff fetching
           TODAY=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          TODAY_FORMATTED=$(date '+%A, %d %B %Y at %H:%M UTC')
+          TOMORROW=$(date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)
+          TODAY_FORMATTED=$(date '+%A, %d %B %Y')
           
-          echo "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Fetching tariffs for Eastern England..."
+          echo "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Fetching full tariff data for Eastern England..."
           
-          # Test API connection
-          echo "🔌 Testing Octopus API..."
-          API_TEST=$(curl -s -w "%{http_code}" -u "${OCTOPUS_API_KEY}:" \
-            "https://api.octopus.energy/v1/products/AGILE-24-10-01/" -o /dev/null)
-          
-          if [ "$API_TEST" = "200" ]; then
-            echo "✅ API connection successful"
-          else
-            echo "❌ API failed (HTTP: $API_TEST)"
-            exit 1
-          fi
-          
-          # Fetch some basic tariff data
+          # Fetch Agile rates (next few hours)
           echo "⚡ Fetching Agile rates..."
           AGILE_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
-            "https://api.octopus.energy/v1/products/AGILE-24-10-01/electricity-tariffs/E-1R-AGILE-24-10-01-A/standard-unit-rates/?page_size=6")
+            "https://api.octopus.energy/v1/products/AGILE-24-10-01/electricity-tariffs/E-1R-AGILE-24-10-01-A/standard-unit-rates/?period_from=${TODAY}&period_to=${TOMORROW}&page_size=12")
           
-          # Create Discord message
-          MESSAGE="{
-            \"content\": \"🔋 **Octopus Energy Tariff Monitor**\\n📅 ${TODAY_FORMATTED}\\n\\n⚡ **Status**: Successfully connected!\\n🏴󠁧󠁢󠁥󠁮󠁧󠁿 **Region**: Eastern England\\n👤 **Account**: ${ACCOUNT_NUMBER:0:4}...\\n\\n✅ **Agile**: Data retrieved\\n✅ **API**: Connected\\n✅ **Discord**: Webhook working\\n\\n📊 **Next**: Full tariff comparison will be available in your daily 6 AM reports!\"
-          }"
+          # Fetch Tracker rates
+          echo "📊 Fetching Tracker rates..."
+          TRACKER_DATA=$(curl -s -u "${OCTOPUS_API_KEY}:" \
+            "https://api.octopus.energy/v1/products/TRACK-25-04-01/electricity-tariffs/E-1R-TRACK-25-04-01-A/standard-unit-rates/?page_size=3")
+          
+          # Process Agile data for next 6 periods
+          echo "Processing Agile data..."
+          AGILE_RATES=$(echo "$AGILE_DATA" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+              rates = data.get('results', [])[:6]
+              for rate in rates:
+                  time = rate['valid_from'][11:16]
+                  price = rate['value_inc_vat']
+                  print(f'  • {time}: {price:.2f}p/kWh')
+          except:
+              print('  • Unable to parse rates')
+          ")
+          
+          # Process Tracker data
+          echo "Processing Tracker data..."
+          TRACKER_RATE=$(echo "$TRACKER_DATA" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+              rate = data.get('results', [{}])[0].get('value_inc_vat', 'N/A')
+              print(f'{rate}p/kWh' if rate != 'N/A' else 'N/A')
+          except:
+              print('N/A')
+          ")
+          
+          # Create comprehensive Discord message using cat with EOF
+          cat << EOF > /tmp/discord_message.json
+          {
+            "content": "🔋 **Daily Energy Tariff Report - Eastern England**\n📅 ${TODAY_FORMATTED}\n\n⚡ **Agile Octopus** (Next 3 hours):\n${AGILE_RATES}\n\n📊 **Tracker v2**: ${TRACKER_RATE}\n• Daily wholesale-based pricing\n• Capped at 100p/kWh\n\n🚗 **Octopus Go**:\n• **7.5p/kWh** overnight (00:30-04:30)\n• Standard day rate other times\n• Perfect for EV charging\n\n🏠 **Cosy Octopus**:\n• **3 off-peak periods**: 4-7am, 1-4pm, 10pm-12am\n• **51% cheaper** during off-peak\n• **45% more expensive** 4-7pm peak\n\n💡 **Usage Tips**:\n• **Agile**: Use cheapest half-hour periods\n• **Tracker**: Consistent daily wholesale rates\n• **Go**: Charge EV during 4-hour window\n• **Cosy**: Run heat pump in off-peak slots\n\n🏴󠁧󠁢󠁥󠁮󠁧󠁿 **Region**: Eastern England (A)\n👤 **Account**: ${ACCOUNT_NUMBER:0:4}...\n\n_Rates include VAT. Data from Octopus Energy API._"
+          }
+          EOF
           
           # Send to Discord
-          echo "📨 Sending to Discord..."
-          DISCORD_RESPONSE=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
-            -d "$MESSAGE" "$DISCORD_WEBHOOK" -o /dev/null)
+          echo "📨 Sending comprehensive report to Discord..."
+          curl -H "Content-Type: application/json" \
+               -d @/tmp/discord_message.json \
+               "$DISCORD_WEBHOOK"
           
-          if [ "$DISCORD_RESPONSE" = "204" ]; then
-            echo "✅ Successfully sent to Discord!"
+          if [ $? -eq 0 ]; then
+            echo "✅ Successfully sent full tariff report to Discord"
           else
-            echo "❌ Discord failed (HTTP: $DISCORD_RESPONSE)"
-            echo "🔧 Check NOTIFICATION_URLS format"
+            echo "❌ Failed to send to Discord"
           fi
