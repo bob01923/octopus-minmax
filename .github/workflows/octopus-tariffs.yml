@@ -1,9 +1,6 @@
 name: Octopus Bot (Auto + Test + Live Override)
 
 on:
-  schedule:
-    - cron: '5 23 * * *'  # 11:05 PM BST automatic run
-  
   workflow_dispatch:
     inputs:
       run_type:
@@ -16,25 +13,6 @@ on:
         default: 'test-run'
 
 jobs:
-  # Automatic live run at 11:05 PM BST
-  automatic-switching:
-    name: Automatic Tariff Switching (11:05 PM BST)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    steps:
-      - name: Run automatic tariff switching
-        run: |
-          echo "🔴 Automatic tariff switching at 11:05 PM BST..."
-          docker run --rm \
-            -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
-            -e API_KEY="${{ secrets.API_KEY }}" \
-            -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
-            -e TARIFFS="agile,cosy,go" \
-            -e ONE_OFF=true \
-            -e DRY_RUN=false \
-            -e TZ="Europe/London" \
-            eelmafia/octopus-minmax-bot
-
   # Manual test run (comparison only)
   test-run:
     name: Test Run (Cost Comparison Only)
