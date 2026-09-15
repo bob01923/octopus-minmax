@@ -19,6 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'test-run'
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t octopus-minmax-bot:local .
       - name: Run cost comparison test
         run: |
           echo "🚀 Running test - cost comparison only (no switching)..."
@@ -26,11 +30,11 @@ jobs:
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
             -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
-            -e TARIFFS="agile,cosy,go" \
+            -e TARIFFS="agile,cosy,go,intelligent-go" \
             -e ONE_OFF=true \
             -e DRY_RUN=true \
             -e TZ="Europe/London" \
-            eelmafia/octopus-minmax-bot
+            octopus-minmax-bot:local
 
   # Manual live override (immediate switching)
   live-override:
@@ -38,6 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'live-override'
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t octopus-minmax-bot:local .
       - name: Run immediate tariff switching
         run: |
           echo "⚡ LIVE OVERRIDE: Immediate tariff switching..."
@@ -45,8 +53,8 @@ jobs:
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
             -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
-            -e TARIFFS="agile,cosy,go" \
+            -e TARIFFS="agile,cosy,go,intelligent-go" \
             -e ONE_OFF=true \
             -e DRY_RUN=false \
             -e TZ="Europe/London" \
-            eelmafia/octopus-minmax-bot
+            octopus-minmax-bot:local
