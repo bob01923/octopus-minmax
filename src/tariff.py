@@ -34,5 +34,6 @@ TARIFFS = [
     Tariff("go-fix-12m", "Octopus Go 12M Fixed", "Octopus Go 12M Fixed", r"-go-fix-", "go", True),
     Tariff("agile", "Agile Octopus", "Agile Octopus", r"-agile-", "agile", True), # Octopus Agile
     Tariff("cosy", "Cosy Octopus", "Cosy Octopus", r"-cosy-(?!.*fix)", r"cosy-octopus", True), # Octopus Cosy (Variable is the default so don't match anything with 'fix' in the name)
-    Tariff("flexible", "Flexible Octopus", "Flexible Octopus", r"(?<!go-)var", "", False) # Flexible Octopus
+    Tariff("flexible", "Flexible Octopus", "Flexible Octopus", r"(?<!go-)var", "", False), # Flexible Octopus
+    Tariff("intelligent-go", "Intelligent Octopus Go", "Intelligent Octopus Go", r"iog-smb-fix|intelli-fix", "intelligent-go", False), # Intelligent Octopus Go (not auto-switchable via this bot)
 ]
