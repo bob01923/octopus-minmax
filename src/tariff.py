@@ -40,6 +40,44 @@ class Tariff:
             f"switchable={self.switchable!r})"
         )
 
+    def __str__(self) -> str:
+        return (
+            f"Tariff(id={self.id}, display_name={self.display_name}, "
+            f"api_display_name={self.api_display_name}, "
+            f"tariff_code_matcher={self.tariff_code_matcher}, "
+            f"url_tariff_name={self.url_tariff_name}, "
+            f"switchable={self.switchable}, product_code={self.product_code})"
+        )
+
+
+TARIFFS = [
+    Tariff("go", "Octopus Go", "Octopus Go", r"-go-var-", "go", True),
+    Tariff("go-fix-12m", "Octopus Go 12M Fixed", "Octopus Go 12M Fixed", r"-go-fix-", "go", True),
+    Tariff("agile", "Agile Octopus", "Agile Octopus", r"-agile-", "agile", True),
+    Tariff("cosy", "Cosy Octopus", "Cosy Octopus", r"-cosy-(?!.*fix)", "cosy-octopus", True),
+    Tariff(
+        "intelligent-go",
+        "Intelligent Octopus Go",
+        "Intelligent Octopus",
+        r"intelli-(?:var|fix)|iog-",
+        "intelligent-go",
+        False,
+    ),
+    Tariff(
+        "flexible",
+        "Flexible Octopus",
+        "Flexible Octopus",
+        r"(?<!go-|cosy-|intelli-)var-",
+        "",
+        False,
+    ),
+]
+    def __repr__(self) -> str:
+        return (
+            f"Tariff(id={self.id!r}, display_name={self.display_name!r}, "
+            f"switchable={self.switchable!r})"
+        )
+
 
 TARIFFS = [
     # Match specific specialist tariffs first
