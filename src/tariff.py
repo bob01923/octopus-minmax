@@ -50,6 +50,37 @@ TARIFFS = [
     Tariff(
         "intelligent-go",
         "Intelligent Octopus Go",
+        "Intelligent Octopus",  # Matches the exact product display_name in Octopus REST API
+        r"intelli-(?:var|fix)|iog-",
+        "intelligent-go",
+        False,  # Not auto-switchable via bot (requires in-app EV test charge)
+    ),
+    # Flexible should explicitly exclude other EV/heat pump variable products
+    Tariff(
+        "flexible",
+        "Flexible Octopus",
+        "Flexible Octopus",
+        r"(?<!go-|cosy-|intelli-)var-",
+        "",
+        False,
+    ),
+]
+    def __repr__(self) -> str:
+        return (
+            f"Tariff(id={self.id!r}, display_name={self.display_name!r}, "
+            f"switchable={self.switchable!r})"
+        )
+
+
+TARIFFS = [
+    # Match specific specialist tariffs first
+    Tariff("go", "Octopus Go", "Octopus Go", r"-go-var-", "go", True),
+    Tariff("go-fix-12m", "Octopus Go 12M Fixed", "Octopus Go 12M Fixed", r"-go-fix-", "go", True),
+    Tariff("agile", "Agile Octopus", "Agile Octopus", r"-agile-", "agile", True),
+    Tariff("cosy", "Cosy Octopus", "Cosy Octopus", r"-cosy-(?!.*fix)", "cosy-octopus", True),
+    Tariff(
+        "intelligent-go",
+        "Intelligent Octopus Go",
         "Intelligent Octopus Go",
         r"intelli-(?:var|fix)|iog-",
         "intelligent-go",
