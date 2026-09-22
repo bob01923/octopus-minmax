@@ -51,6 +51,7 @@ class Tariff:
 
 
 TARIFFS = [
+    # Specialist tariffs are checked first
     Tariff("go", "Octopus Go", "Octopus Go", r"-go-var-", "go", True),
     Tariff("go-fix-12m", "Octopus Go 12M Fixed", "Octopus Go 12M Fixed", r"-go-fix-", "go", True),
     Tariff("agile", "Agile Octopus", "Agile Octopus", r"-agile-", "agile", True),
@@ -63,11 +64,12 @@ TARIFFS = [
         "intelligent-go",
         False,
     ),
+    # Flexible Octopus uses the standard single fixed-width lookbehind
     Tariff(
         "flexible",
         "Flexible Octopus",
         "Flexible Octopus",
-        r"(?<!go-|cosy-|intelli-)var-",
+        r"(?<!go-)var",
         "",
         False,
     ),
