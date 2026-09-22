@@ -1,6 +1,9 @@
 name: Octopus Bot (Auto + Test + Live Override)
 
 on:
+  schedule:
+    # Runs daily at 23:00 UK time (Europe/London)
+    - cron: '0 23 * * *'
   workflow_dispatch:
     inputs:
       run_type:
@@ -8,52 +11,58 @@ on:
         required: true
         type: choice
         options:
-        - test-run
-        - live-override
+          - test-run
+          - live-override
         default: 'test-run'
 
 jobs:
-  # Manual test run (comparison only)
+  # Manual test run (cost comparison only, safe)
   test-run:
     name: Test Run (Cost Comparison Only)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'test-run'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'test-run')
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Build image
+
+      - name: Build local Docker image
         run: docker build -t octopus-minmax-bot:local .
-      - name: Run cost comparison test
+
+      - name: Run cost comparison simulation
         run: |
           echo "🚀 Running test - cost comparison only (no switching)..."
           docker run --rm \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
             -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
-            -e TARIFFS="agile,cosy,go" \
+            -e TARIFFS="agile,cosy,go,intelligent-go" \
+            -e SWITCH_THRESHOLD=2 \
             -e ONE_OFF=true \
             -e DRY_RUN=true \
             -e TZ="Europe/London" \
             octopus-minmax-bot:local
 
-  # Manual live override (immediate switching)
+  # Live override (automatic switching when beneficial)
   live-override:
-    name: Live Override (Immediate Tariff Switch)
+    name: Live Override (Automatic Tariff Switch)
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_type == 'live-override'
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Build image
+
+      - name: Build local Docker image
         run: docker build -t octopus-minmax-bot:local .
-      - name: Run immediate tariff switching
+
+      - name: Run live tariff switching
         run: |
-          echo "⚡ LIVE OVERRIDE: Immediate tariff switching..."
+          echo "⚡ LIVE: Running comparison and automatic switching..."
           docker run --rm \
             -e ACC_NUMBER="${{ secrets.ACC_NUMBER }}" \
             -e API_KEY="${{ secrets.API_KEY }}" \
             -e NOTIFICATION_URLS="${{ secrets.NOTIFICATION_URLS }}" \
-            -e TARIFFS="agile,cosy,go" \
+            -e TARIFFS="agile,cosy,go,intelligent-go" \
+            -e SWITCH_THRESHOLD=2 \
             -e ONE_OFF=true \
             -e DRY_RUN=false \
             -e TZ="Europe/London" \
