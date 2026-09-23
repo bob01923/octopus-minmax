@@ -179,4 +179,93 @@ class ComparisonEngine:
         return CostBreakdown(
                 consumption_cost=total_con_cost,
                 standing_charge=account_info.standing_charge,
-                total_cost=total_con_cost +
+                total_cost=total_con_cost + 
+            account_info.standing_charge,
+                total_kwh=total_kwh
+            )
+
+    def _calculate_potential_costs(self,
+                                   consumption_data: List[dict],
+                                   rate_data: List[dict]) -> List[dict]:
+
+        period_costs = []
+        for consumption in consumption_data:
+            read_time = consumption['readAt'].replace('+00:00', 'Z')
+            matching_rate = next(
+                rate for rate in rate_data
+                # Flexible has no end time, so default to the end of time
+                if rate['valid_from'] <= read_time <= (rate.get('valid_to') or "9999-12-31T23:59:59Z")
+                # DIRECT_DEBIT is for flexible that has different price for direct debit or not
+                and rate['payment_method'] in [None, "DIRECT_DEBIT"]
+            )
+
+            consumption_kwh = float(consumption['consumptionDelta']) / 1000
+            cost = float("{:.4f}".format(consumption_kwh * matching_rate['value_inc_vat']))
+
+            period_costs.append({
+                'period_end': read_time,
+                'consumption_kwh': consumption_kwh,
+                'rate': matching_rate['value_inc_vat'],
+                'calculated_cost': cost,
+            })
+
+        return period_costs
+
+    def _get_potential_tariff_rates(self, tariff: Tariff, region_code: str) -> Tuple[float, list[dict], str]:
+        """
+        Get rates for a specific tariff and region
+        """
+
+        all_products = self.query_service.execute_rest_query(f"{config.BASE_URL}/products/?brand=OCTOPUS_ENERGY&is_business=false")
+        product = next((
+            product for product in all_products['results']
+            if product['display_name'] == tariff.api_display_name
+            and product['direction'] == "IMPORT"
+        ), None)
+
+        if not product:
+            raise ValueError(f"No matching tariff found for {tariff.api_display_name}")
+
+        product_code = product.get('code')
+        if product_code is None:
+            raise ValueError(f"No product code found for {tariff.api_display_name}")
+
+        product_link = next((
+            item.get('href') for item in product.get('links', [])
+            if item.get('rel', '').lower() == 'self'
+        ), None)
+        if not product_link:
+            raise ValueError(f"Self link not found for tariff {product_code}.")
+
+        tariff_details = self.query_service.execute_rest_query(product_link)
+
+        # Get the standing charge including VAT
+        region_code_key = f'_{region_code}'
+        filtered_region = tariff_details.get('single_register_electricity_tariffs', {}).get(region_code_key)
+
+        if filtered_region is None:
+            raise ValueError(f"Region code not found: {region_code_key}")
+
+        region_tariffs = filtered_region.get('direct_debit_monthly') or filtered_region.get('varying')
+        standing_charge_inc_vat = region_tariffs.get('standing_charge_inc_vat')
+
+        if standing_charge_inc_vat is None:
+            raise ValueError(f"Standing charge including VAT not found for region {region_code_key}.")
+
+        # Find the link for standard unit rates
+        region_links = region_tariffs.get('links', [])
+        unit_rates_link = next((
+            item.get('href') for item in region_links
+            if item.get('rel', '').lower() == 'standard_unit_rates'
+        ), None)
+
+        if not unit_rates_link:
+            raise ValueError(f"Standard unit rates link not found for region: {region_code_key}")
+
+        # Get today's rates
+        today = date.today()
+        unit_rates_link_with_time = f"{unit_rates_link}?period_from={today}T00:00:00Z&period_to={today}T23:59:59Z"
+        unit_rates = self.query_service.execute_rest_query(unit_rates_link_with_time)
+
+        return standing_charge_inc_vat, unit_rates.get('results', []), product_code
+
