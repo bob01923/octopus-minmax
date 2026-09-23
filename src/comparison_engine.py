@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
-from tariff 
-import Tariff
+from tariff import Tariff
 import config
 from datetime import date
 from account_info import AccountInfo
